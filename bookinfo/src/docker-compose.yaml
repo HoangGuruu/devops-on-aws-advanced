@@ -1,0 +1,122 @@
+version: "3.9"
+
+name: devops-aws-real-project
+
+services:
+  # ---------- Databases ----------
+  mongodb:
+    build:
+      context: ./mongodb
+    container_name: mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks: [app-net]
+
+  mysql:
+    build:
+      context: ./mysql
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      # BẮT BUỘC: đổi mật khẩu khi chạy thực tế hoặc đặt trong file .env
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-reviews}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks: [app-net]
+
+  # ---------- Microservices ----------
+  details:
+    build:
+      context: ./details
+      args:
+        service_version: ${DETAILS_VERSION:-v1}
+        enable_external_book_service: ${ENABLE_EXTERNAL_BOOK_SERVICE:-false}
+    container_name: details
+    environment:
+      SERVICE_VERSION: ${DETAILS_VERSION:-v1}
+      ENABLE_EXTERNAL_BOOK_SERVICE: ${ENABLE_EXTERNAL_BOOK_SERVICE:-false}
+    expose:
+      - "9080"
+    depends_on:
+      - mongodb
+      - mysql
+    restart: unless-stopped
+    networks: [app-net]
+
+  ratings:
+    build:
+      context: ./ratings
+      args:
+        service_version: ${RATINGS_VERSION:-v1}
+    container_name: ratings
+    environment:
+      SERVICE_VERSION: ${RATINGS_VERSION:-v1}
+      # Nếu code dùng connection string mặc định, hostname là "mongodb"
+      MONGO_DB_URL: ${MONGO_DB_URL:-mongodb://mongodb:27017/test}
+      # MONGO_PORT: ${MONGO_PORT:-27017}
+    expose:
+      - "9080"
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+    networks: [app-net]
+
+  reviews:
+    build:
+      context: ./reviews
+      args:
+        service_version: ${REVIEWS_VERSION:-v1}
+        enable_ratings: ${ENABLE_RATINGS:-false}
+        star_color: ${STAR_COLOR:-black}
+    container_name: reviews
+    environment:
+      SERVICE_VERSION: ${REVIEWS_VERSION:-v1}
+      ENABLE_RATINGS: ${ENABLE_RATINGS:-false}
+      STAR_COLOR: ${STAR_COLOR:-black}
+      # Các biến DB phổ biến – tùy mã nguồn có dùng hay không
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-reviews}
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+    expose:
+      - "9080"
+    depends_on:
+      - mysql
+    restart: unless-stopped
+    networks: [app-net]
+
+  productpage:
+    build:
+      context: ./productpage
+      args:
+        flood_factor: ${FLOOD_FACTOR:-0}
+    container_name: productpage
+    environment:
+      FLOOD_FACTOR: ${FLOOD_FACTOR:-0}
+      # Tên host các service nội bộ (service discovery qua Docker DNS)
+      DETAILS_HOST: ${DETAILS_HOST:-details}
+      RATINGS_HOST: ${RATINGS_HOST:-ratings}
+      REVIEWS_HOST: ${REVIEWS_HOST:-reviews}
+    ports:
+      - "9080:9080"   # Truy cập từ máy host: http://localhost:9080
+    depends_on:
+      - details
+      - ratings
+      - reviews
+    restart: unless-stopped
+    networks: [app-net]
+
+# ---------- Networks & Volumes ----------
+networks:
+  app-net:
+
+volumes:
+  mongo-data:
+  mysql-data:
