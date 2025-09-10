@@ -15,6 +15,7 @@ sh get-docker.sh
 docker --version
 
 sudo usermod -aG docker $USER
+sudo chmod 660 /var/run/docker.sock
 newgrp docker
 
 ```
